@@ -169,14 +169,18 @@ const verifyEmail = async (req, res) => {
 // ── Resend Verification ───────────────────────────────────────────
 const resendVerification = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
-    if (user.isEmailVerified)
-      return res.status(400).json({ message: "Email already verified" });
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
+    const user = await User.findOne({ email });
+    // Always return success even if user not found (security best practice)
+    if (!user || user.isEmailVerified)
+      return res.json({ message: "If that account exists and is unverified, a link has been sent." });
     user.emailVerifyToken = randToken();
     user.emailVerifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
     await user.save();
-    await sendVerificationEmail(user.email, user.name, user.emailVerifyToken);
-    res.json({ message: "Verification email sent!" });
+    sendVerificationEmail(user.email, user.name, user.emailVerifyToken)
+      .catch((e) => console.error("❌ Resend verification email failed:", e.message));
+    res.json({ message: "If that account exists and is unverified, a link has been sent." });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -16,7 +16,7 @@ r.post("/register", register);
 r.post("/login", login);
 r.get("/me", protect, getMe);
 r.get("/verify-email", verifyEmail);
-r.post("/resend-verification", protect, resendVerification);
+r.post("/resend-verification", resendVerification);
 r.post("/forgot-password", forgotPassword);
 r.post("/reset-password", resetPassword);
 r.post("/change-password", protect, changePassword);

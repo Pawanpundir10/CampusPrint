@@ -17,21 +17,9 @@ export default function ResendVerification() {
 
         setLoading(true);
         try {
-            // First try to get token from localStorage (if user was logged in)
-            const token = localStorage.getItem("cp_token");
-
-            if (!token) {
-                // If not logged in, they need to do a manual verification by logging in first
-                setToast({
-                    message: "Please log in first, then we can resend the verification email.",
-                    type: "info",
-                });
-                return;
-            }
-
-            const res = await API.post("/auth/resend-verification", {});
+            await API.post("/auth/resend-verification", { email });
             setToast({
-                message: "✅ Verification email sent! Check your inbox.",
+                message: "✅ If your account exists and is unverified, a link has been sent. Check your inbox!",
                 type: "success",
             });
             setEmail("");

@@ -1,36 +1,69 @@
-const nodemailer = require("nodemailer");
+const https = require("https");
 
-console.log("📧 Mailer Config:");
-console.log("   Brevo User:", process.env.BREVO_USER);
-console.log(
-  "   Brevo SMTP Key:",
-  process.env.BREVO_SMTP_KEY ? "✓ Set" : "❌ Missing",
-);
+// ─── Brevo HTTP API sender (no SMTP — works on all hosts) ───────────
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const FROM_EMAIL   = process.env.EMAIL_USER || "pawanpundir191@gmail.com";
+const FROM_NAME    = "CampusPrint";
 
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  connectionTimeout: 15000,
-  greetingTimeout: 15000,
-  socketTimeout: 15000,
-  auth: {
-    user: process.env.BREVO_USER,
-    pass: process.env.BREVO_SMTP_KEY,
-  },
-});
+if (!BREVO_API_KEY) {
+  console.warn("⚠️  BREVO_API_KEY is not set — emails will not be sent");
+} else {
+  console.log("✅ Brevo API Key loaded — email service ready");
+}
 
-// Verify connection
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("❌ Email service error:", error.message);
-  } else {
-    console.log("✅ Email service ready");
-  }
-});
+/**
+ * Send an email via Brevo Transactional Email API (HTTPS, port 443).
+ * @param {string} to - Recipient email
+ * @param {string} toName - Recipient name
+ * @param {string} subject - Email subject
+ * @param {string} html - HTML body
+ */
+const sendEmail = (to, toName, subject, html) => {
+  return new Promise((resolve, reject) => {
+    if (!BREVO_API_KEY) return reject(new Error("BREVO_API_KEY not configured"));
 
-const BASE = process.env.CLIENT_URL || "http://localhost:5173";
-const BASE_API = process.env.API_URL || "http://localhost:5000/api";
+    const body = JSON.stringify({
+      sender: { name: FROM_NAME, email: FROM_EMAIL },
+      to: [{ email: to, name: toName }],
+      subject,
+      htmlContent: html,
+    });
+
+    const req = https.request(
+      {
+        hostname: "api.brevo.com",
+        path: "/v3/smtp/email",
+        method: "POST",
+        headers: {
+          "api-key": BREVO_API_KEY,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        },
+        timeout: 15000,
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            console.log(`✅ Email sent to ${to} (status ${res.statusCode})`);
+            resolve();
+          } else {
+            reject(new Error(`Brevo API error ${res.statusCode}: ${data}`));
+          }
+        });
+      },
+    );
+
+    req.on("timeout", () => { req.destroy(); reject(new Error("Brevo API request timed out")); });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+};
+
+const BASE     = process.env.CLIENT_URL || "http://localhost:5173";
+const BASE_API = process.env.API_URL    || "http://localhost:5000/api";
 
 // ─── Email Templates ──────────────────────────────────────────────
 
@@ -67,127 +100,92 @@ const emailBase = (content) => `
 </html>`;
 
 // 1. Email Verification
-const sendVerificationEmail = async (to, name, token) => {
+const sendVerificationEmail = (to, name, token) => {
   const link = `${BASE_API}/auth/verify-email?token=${token}`;
-  await transporter.sendMail({
-    from: `"CampusPrint" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: "Verify your CampusPrint email",
-    html: emailBase(`
-      <div class="badge">Email Verification</div>
-      <div class="title">Hi ${name} 👋</div>
-      <p class="text">Thanks for signing up! Please verify your email address to activate your account.</p>
-      <a href="${link}" class="btn">Verify Email →</a>
-      <hr class="divider"/>
-      <p class="small">This link expires in <strong>24 hours</strong>. If you didn't sign up, ignore this email.</p>
-    `),
-  });
+  return sendEmail(to, name, "Verify your CampusPrint email", emailBase(`
+    <div class="badge">Email Verification</div>
+    <div class="title">Hi ${name} 👋</div>
+    <p class="text">Thanks for signing up! Please verify your email address to activate your account.</p>
+    <a href="${link}" class="btn">Verify Email →</a>
+    <hr class="divider"/>
+    <p class="small">This link expires in <strong>24 hours</strong>. If you didn't sign up, ignore this email.</p>
+  `));
 };
 
 // 2. Forgot Password
-const sendPasswordResetEmail = async (to, name, token) => {
+const sendPasswordResetEmail = (to, name, token) => {
   const link = `${BASE}/reset-password?token=${token}`;
-  await transporter.sendMail({
-    from: `"CampusPrint" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: "Reset your CampusPrint password",
-    html: emailBase(`
-      <div class="badge">Password Reset</div>
-      <div class="title">Reset your password</div>
-      <p class="text">Hi ${name}, we received a request to reset your password. Click the button below to set a new one.</p>
-      <a href="${link}" class="btn">Reset Password →</a>
-      <hr class="divider"/>
-      <p class="small">This link expires in <strong>1 hour</strong>. If you didn't request this, you can safely ignore this email.</p>
-    `),
-  });
+  return sendEmail(to, name, "Reset your CampusPrint password", emailBase(`
+    <div class="badge">Password Reset</div>
+    <div class="title">Reset your password</div>
+    <p class="text">Hi ${name}, we received a request to reset your password. Click the button below to set a new one.</p>
+    <a href="${link}" class="btn">Reset Password →</a>
+    <hr class="divider"/>
+    <p class="small">This link expires in <strong>1 hour</strong>. If you didn't request this, you can safely ignore this email.</p>
+  `));
 };
 
 // 3. Shop Verification Request → sent to platform admin
-const sendShopVerificationRequest = async (shop, owner) => {
-  const approveLink = `${process.env.BASE_URL}/api/shops/verify/${shop._id}?action=approve`;
-  const rejectLink = `${process.env.BASE_URL}/api/shops/verify/${shop._id}?action=reject`;
-  await transporter.sendMail({
-    from: `"CampusPrint" <${process.env.EMAIL_USER}>`,
-    to: process.env.ADMIN_EMAIL,
-    subject: `New Shop Verification Request — ${shop.shopName}`,
-    html: emailBase(`
-      <div class="badge">Shop Verification</div>
-      <div class="title">${shop.shopName}</div>
-      <p class="text">A new print shop has submitted a verification request.</p>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-        ${[
-          ["Shop Name", shop.shopName],
-          ["College", shop.collegeName],
-          ["Location", shop.location || "—"],
-          ["Owner", owner.name],
-          ["Email", owner.email],
-          ["Phone", owner.phone || "—"],
-          ["B/W Price", `₹${shop.bwPrice}/page`],
-          ["Color Price", `₹${shop.colorPrice}/page`],
-        ]
-          .map(
-            ([k, v]) => `
+const sendShopVerificationRequest = (shop, owner) => {
+  const approveLink = `${BASE_API}/shops/verify/${shop._id}?action=approve`;
+  const rejectLink  = `${BASE_API}/shops/verify/${shop._id}?action=reject`;
+  return sendEmail(process.env.EMAIL_USER, "CampusPrint Admin", `New Shop Verification Request — ${shop.shopName}`, emailBase(`
+    <div class="badge">Shop Verification</div>
+    <div class="title">${shop.shopName}</div>
+    <p class="text">A new print shop has submitted a verification request.</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+      ${[
+        ["Shop Name", shop.shopName],
+        ["College", shop.collegeName],
+        ["Location", shop.location || "—"],
+        ["Owner", owner.name],
+        ["Email", owner.email],
+        ["Phone", owner.phone || "—"],
+        ["B/W Price", `₹${shop.bwPrice}/page`],
+        ["Color Price", `₹${shop.colorPrice}/page`],
+      ]
+        .map(([k, v]) => `
           <tr>
             <td style="padding:8px 12px;background:#f9f9f9;color:#666;font-size:13px;border-radius:4px;font-weight:600;">${k}</td>
             <td style="padding:8px 12px;color:#111;font-size:13px;">${v}</td>
           </tr>
-        `,
-          )
-          .join("")}
-      </table>
-      <a href="${approveLink}" class="btn" style="background:#16A34A;margin-right:8px;">✓ Approve Shop</a>
-      <a href="${rejectLink}"  class="btn" style="background:#DC2626;">✗ Reject Shop</a>
-    `),
-  });
+        `)
+        .join("")}
+    </table>
+    <a href="${approveLink}" class="btn" style="background:#16A34A;margin-right:8px;">✓ Approve Shop</a>
+    <a href="${rejectLink}"  class="btn" style="background:#DC2626;">✗ Reject Shop</a>
+  `));
 };
 
-// 4. Shop Approved → sent to shop owner
-const sendShopApprovedEmail = async (to, name, shopName) => {
-  await transporter.sendMail({
-    from: `"CampusPrint" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: `🎉 Your shop "${shopName}" is approved!`,
-    html: emailBase(`
-      <div class="badge">Shop Approved ✓</div>
-      <div class="title">Congratulations, ${name}! 🎉</div>
-      <p class="text">Your shop <strong>${shopName}</strong> has been verified and is now live on CampusPrint. Students can now find and place orders at your shop.</p>
-      <a href="${BASE}/admin/orders" class="btn">Go to Dashboard →</a>
-    `),
-  });
-};
+// 4. Shop Approved
+const sendShopApprovedEmail = (to, name, shopName) =>
+  sendEmail(to, name, `🎉 Your shop "${shopName}" is approved!`, emailBase(`
+    <div class="badge">Shop Approved ✓</div>
+    <div class="title">Congratulations, ${name}! 🎉</div>
+    <p class="text">Your shop <strong>${shopName}</strong> has been verified and is now live on CampusPrint. Students can now find and place orders at your shop.</p>
+    <a href="${BASE}/admin/orders" class="btn">Go to Dashboard →</a>
+  `));
 
-// 5. Shop Rejected → sent to shop owner
-const sendShopRejectedEmail = async (to, name, shopName, reason) => {
-  await transporter.sendMail({
-    from: `"CampusPrint" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: `Shop verification update — ${shopName}`,
-    html: emailBase(`
-      <div class="badge" style="background:#FEF2F2;color:#DC2626;border-color:#FECACA;">Verification Update</div>
-      <div class="title">Hi ${name},</div>
-      <p class="text">Unfortunately, your shop <strong>${shopName}</strong> could not be verified at this time.</p>
-      ${reason ? `<p class="text"><strong>Reason:</strong> ${reason}</p>` : ""}
-      <p class="text">Please update your shop details and resubmit for verification.</p>
-      <a href="${BASE}/admin/shop" class="btn">Update Shop →</a>
-    `),
-  });
-};
+// 5. Shop Rejected
+const sendShopRejectedEmail = (to, name, shopName, reason) =>
+  sendEmail(to, name, `Shop verification update — ${shopName}`, emailBase(`
+    <div class="badge" style="background:#FEF2F2;color:#DC2626;border-color:#FECACA;">Verification Update</div>
+    <div class="title">Hi ${name},</div>
+    <p class="text">Unfortunately, your shop <strong>${shopName}</strong> could not be verified at this time.</p>
+    ${reason ? `<p class="text"><strong>Reason:</strong> ${reason}</p>` : ""}
+    <p class="text">Please update your shop details and resubmit for verification.</p>
+    <a href="${BASE}/admin/shop" class="btn">Update Shop →</a>
+  `));
 
-// 6. Welcome email after verification
-const sendWelcomeEmail = async (to, name, role) => {
-  await transporter.sendMail({
-    from: `"CampusPrint" <${process.env.EMAIL_USER}>`,
-    to,
-    subject: "Welcome to CampusPrint! 🖨️",
-    html: emailBase(`
-      <div class="title">Welcome, ${name}! 🎉</div>
-      <p class="text">Your email is verified. You're all set to use CampusPrint as a <strong>${role === "admin" ? "Shop Owner" : "Student"}</strong>.</p>
-      <a href="${BASE}/${role === "admin" ? "admin/shop" : "student/shops"}" class="btn">
-        ${role === "admin" ? "Set Up Your Shop →" : "Browse Print Shops →"}
-      </a>
-    `),
-  });
-};
+// 6. Welcome email
+const sendWelcomeEmail = (to, name, role) =>
+  sendEmail(to, name, "Welcome to CampusPrint! 🖨️", emailBase(`
+    <div class="title">Welcome, ${name}! 🎉</div>
+    <p class="text">Your email is verified. You're all set to use CampusPrint as a <strong>${role === "admin" ? "Shop Owner" : "Student"}</strong>.</p>
+    <a href="${BASE}/${role === "admin" ? "admin/shop" : "student/shops"}" class="btn">
+      ${role === "admin" ? "Set Up Your Shop →" : "Browse Print Shops →"}
+    </a>
+  `));
 
 module.exports = {
   sendVerificationEmail,
