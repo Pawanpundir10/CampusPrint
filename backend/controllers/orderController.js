@@ -87,6 +87,17 @@ const cancelOrder = async (req, res) => {
     order.cancellationReason = req.body.reason || "Cancelled by student";
     order.paymentStatus = "refunded";
     await order.save();
+
+    // Auto-delete PDFs from Supabase storage on cancel
+    const paths = (order.files || []).map((f) => f.filePath).filter(Boolean);
+    if (paths.length > 0) {
+      supabase.storage.from("orders").remove(paths)
+        .then(({ error }) => {
+          if (error) console.error("❌ File delete error:", error.message);
+          else console.log(`🗑️  Deleted ${paths.length} file(s) for cancelled order ${order._id}`);
+        });
+    }
+
     res.json({ message: "Order cancelled", order });
   } catch (err) {
     res.status(500).json({ message: err.message });

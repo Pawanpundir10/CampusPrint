@@ -1,5 +1,17 @@
 const Order = require("../models/Order");
 const Shop = require("../models/Shop");
+const supabase = require("../config/supabase");
+
+// Delete all PDFs for an order from Supabase storage
+const deleteOrderFiles = async (order) => {
+  const paths = (order.files || [])
+    .map((f) => f.filePath)
+    .filter(Boolean);
+  if (paths.length === 0) return;
+  const { error } = await supabase.storage.from("orders").remove(paths);
+  if (error) console.error("❌ Supabase file delete error:", error.message);
+  else console.log(`🗑️  Deleted ${paths.length} file(s) for order ${order._id}`);
+};
 
 const getShopOrders = async (req, res) => {
   try {
@@ -44,6 +56,14 @@ const updateOrderStatus = async (req, res) => {
     }
 
     await order.save();
+
+    // Auto-delete PDFs from storage when order is done or cancelled
+    if (status === "completed" || status === "cancelled") {
+      deleteOrderFiles(order).catch((e) =>
+        console.error("File cleanup failed:", e.message)
+      );
+    }
+
     res.json({ message: "Status updated", order });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -132,4 +152,5 @@ module.exports = {
   updateOrderStatus,
   markPaymentReceived,
   getEarnings,
+  deleteOrderFiles,
 };
