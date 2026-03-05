@@ -1,22 +1,22 @@
 const nodemailer = require("nodemailer");
 
 console.log("📧 Mailer Config:");
-console.log("   Email User:", process.env.EMAIL_USER);
+console.log("   Brevo User:", process.env.BREVO_USER);
 console.log(
-  "   Email Password:",
-  process.env.EMAIL_PASSWORD ? "✓ Set" : "❌ Missing",
+  "   Brevo SMTP Key:",
+  process.env.BREVO_SMTP_KEY ? "✓ Set" : "❌ Missing",
 );
 
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
+  connectionTimeout: 15000,
+  greetingTimeout: 15000,
+  socketTimeout: 15000,
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASSWORD,
+    user: process.env.BREVO_USER,
+    pass: process.env.BREVO_SMTP_KEY,
   },
 });
 
