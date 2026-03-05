@@ -63,13 +63,10 @@ const register = async (req, res) => {
       emailVerifyExpires: verifyExpires,
     });
 
-    try {
-      await sendVerificationEmail(email, name, verifyToken);
-      console.log("✅ Verification email sent to:", email);
-    } catch (e) {
-      console.error("❌ Email failed:", e.message);
-      // Still allow registration even if email fails
-    }
+    // Send verification email in background — don't block the response
+    sendVerificationEmail(email, name, verifyToken)
+      .then(() => console.log("✅ Verification email sent to:", email))
+      .catch((e) => console.error("❌ Email failed:", e.message));
 
     res.status(201).json({
       token: generateToken(user._id),
@@ -197,15 +194,9 @@ const forgotPassword = async (req, res) => {
     user.passwordResetToken = randToken();
     user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000);
     await user.save();
-    try {
-      await sendPasswordResetEmail(
-        user.email,
-        user.name,
-        user.passwordResetToken,
-      );
-    } catch (e) {
-      console.error(e.message);
-    }
+    // Send reset email in background — don't block the response
+    sendPasswordResetEmail(user.email, user.name, user.passwordResetToken)
+      .catch((e) => console.error("❌ Password reset email failed:", e.message));
     res.json({ message: "If that email exists, a reset link has been sent." });
   } catch (err) {
     res.status(500).json({ message: err.message });
