@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment variables (NEVER commit these)
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build output
+dist/
+
+# Temp / test files
+uploads/
+test_*.js
+
+# OS
+.DS_Store
+Thumbs.db
