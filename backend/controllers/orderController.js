@@ -1,6 +1,7 @@
 const Order = require("../models/Order");
 const Shop = require("../models/Shop");
 const supabase = require("../config/supabase");
+const pdfParse = require("pdf-parse");
 
 const createOrder = async (req, res) => {
   try {
@@ -112,6 +113,15 @@ const uploadFiles = async (req, res) => {
     const uploaded = [];
 
     for (const file of req.files) {
+      // Extract page count from the PDF buffer
+      let pageCount = 1;
+      try {
+        const parsed = await pdfParse(file.buffer);
+        pageCount = parsed.numpages || 1;
+      } catch (parseErr) {
+        console.warn("Could not parse PDF pages for", file.originalname, parseErr.message);
+      }
+
       // Generate file path in Supabase storage
       const filePath = `orders/${Date.now()}_${file.originalname}`;
 
@@ -133,6 +143,7 @@ const uploadFiles = async (req, res) => {
         fileUrl: `/orders/pdf/${filePath}`,
         fileName: file.originalname,
         filePath: filePath, // Store for later deletion
+        pageCount,
       });
     }
 
