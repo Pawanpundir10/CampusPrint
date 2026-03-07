@@ -113,13 +113,21 @@ const uploadFiles = async (req, res) => {
     const uploaded = [];
 
     for (const file of req.files) {
-      // Extract page count from the PDF buffer
+      // Extract page count natively via regex to avoid library differences
       let pageCount = 1;
       try {
-        const parsed = await pdfParse(file.buffer);
-        pageCount = parsed.numpages || 1;
-      } catch (parseErr) {
-        console.warn("Could not parse PDF pages for", file.originalname, parseErr.message);
+        const str = file.buffer.toString();
+        const matches = str.match(/\/Type\s*\/Page[^s]/g);
+        if (matches && matches.length > 0) {
+          pageCount = matches.length;
+        } else {
+          const countMatch = str.match(/\/Count\s+(\d+)/);
+          if (countMatch && countMatch[1]) {
+            pageCount = parseInt(countMatch[1] || 1, 10);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not parse PDF pages natively", e.message);
       }
 
       // Generate file path in Supabase storage
